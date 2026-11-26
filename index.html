@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f6e56">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>Số chứng từ</title>
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--tx:#1f2328;--mut:#6b7280;--bd:#d9d6cc;--ac:#0f6e56;--acx:#fff;--er:#b42318;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root{--bg:#17181a;--card:#222426;--tx:#e8e8e6;--mut:#9aa0a6;--bd:#3a3d40;--ac:#4fc3a1;--acx:#08251c;--er:#ff8a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+main{max-width:720px;margin:0 auto;padding:16px 14px 40px}
+h1{font-size:20px;margin:0 0 12px}
+button{font:inherit;min-height:54px;border-radius:12px;border:1px solid var(--ac);padding:0 16px;cursor:pointer}
+.p{background:var(--ac);color:var(--acx);font-weight:600}
+.s{background:transparent;color:var(--ac)}
+button:disabled{opacity:.5}
+#cam{width:100%;min-height:84px;font-size:19px}
+.row{display:flex;gap:8px;margin:10px 0}.row button{flex:1}
+#th{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+#th img{height:56px;border-radius:6px;border:1px solid var(--bd)}
+#st{color:var(--mut);font-size:14px;min-height:21px}#st.err{color:var(--er)}
+#bar{height:6px;border-radius:3px;background:var(--bd);overflow:hidden;margin:6px 0;display:none}
+#bar i{display:block;height:100%;width:0;background:var(--ac);transition:width .2s}
+#sum{font-weight:600;margin:14px 0 6px}
+textarea{width:100%;min-height:220px;background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:12px;padding:12px;font:15px/1.7 ui-monospace,Consolas,monospace}
+.hide{display:none}
+</style>
+</head>
+<body>
+<main>
+<h1>🧾 Trích xuất số chứng từ</h1>
+<button class="p" id="cam">📷 Chụp ảnh</button>
+<div class="row"><button class="s" id="gal">🖼 Chọn từ thư viện</button><button class="s" id="clr">Xóa</button></div>
+<input id="f1" type="file" accept="image/*" capture="environment" class="hide">
+<input id="f2" type="file" accept="image/*" multiple class="hide">
+<div id="th"></div>
+<button class="p" id="go" style="width:100%" disabled>Trích xuất</button>
+<div id="st"></div>
+<div id="res" class="hide">
+  <div id="sum"></div><div id="warn" style="color:var(--er);font-size:14px;margin-bottom:6px"></div>
+  <textarea id="ta" spellcheck="false"></textarea>
+  <div class="row"><button class="p" id="cp">Sao chép</button><button class="s" id="sh">Chia sẻ / Lưu</button></div>
+  <p style="color:var(--mut);font-size:13px">Có thể sửa trực tiếp trong ô trên. Hãy đối chiếu với bản gốc vì OCR có thể sót hoặc sai số.</p>
+</div>
+</main>
+<script src="vendor/ocr.js"></script>
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)},files=[],ocr=null;
+function st(t,e){$('st').textContent=t;$('st').className=e?'err':''}
+function refresh(){var t=$('th');t.textContent='';files.forEach(function(f){var i=document.createElement('img');i.src=URL.createObjectURL(f);t.appendChild(i)});$('go').disabled=!files.length}
+function add(l){Array.prototype.forEach.call(l,function(f){if(/^image\//.test(f.type))files.push(f)});refresh();st(files.length+' ảnh sẵn sàng.')}
+$('cam').onclick=function(){$('f1').click()};$('gal').onclick=function(){$('f2').click()};
+$('f1').onchange=function(){add(this.files);this.value='';if(files.length)$('go').scrollIntoView({block:'center'})};
+$('f2').onchange=function(){add(this.files);this.value=''};
+$('clr').onclick=function(){files=[];refresh();$('res').classList.add('hide');$('ta').value='';$('warn').textContent='';st('')};
+
+function prep(f){return new Promise(function(res,rej){
+  var im=new Image();im.onload=function(){
+    var m=2000,s=Math.min(1,m/Math.max(im.width,im.height)),c=document.createElement('canvas');
+    c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);
+    c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+    c.toBlob(function(b){res(URL.createObjectURL(b))},'image/png');
+  };im.onerror=function(){rej(new Error('Không mở được ảnh'))};im.src=URL.createObjectURL(f)})}
+
+function frag(t){return t.replace(/[–—−_~]/g,'-').replace(/\s+/g,'').replace(/[.,·:;]+$/,'-')}
+function assemble(items){
+  var f=[];
+  items.forEach(function(it){
+    var s=frag(it.text||''),d=(s.match(/\d/g)||[]).length;
+    if(!s||!((d>=4&&d/s.length>=0.7&&s.indexOf('-')>=0)||/^\d{4}$/.test(s)))return;
+    var b=it.box||[[0,0],[0,0],[0,0],[0,0]],ys=b.map(function(p){return p[1]}),xs=b.map(function(p){return p[0]});
+    var y0=Math.min.apply(0,ys),y1=Math.max.apply(0,ys);
+    f.push({s:s,y:(y0+y1)/2,h:y1-y0,x:Math.min.apply(0,xs)});
+  });
+  f.sort(function(a,b){return a.y-b.y});
+  var g=[];f.forEach(function(x){var l=g[g.length-1];if(l&&Math.abs(x.y-l.y)<0.6*Math.max(x.h,l.h,1))l.p.push(x);else g.push({y:x.y,p:[x]})});
+  var rows=[],cur='';
+  g.forEach(function(l){
+    l.p.sort(function(a,b){return a.x-b.x});
+    var s=l.p.map(function(x){return x.s}).join('');
+    cur+=s;if(!/-$/.test(s)){rows.push(cur);cur=''}
+  });
+  if(cur)rows.push(cur);
+  return rows.map(function(r){return r.replace(/-{2,}/g,'-').replace(/^-|-$/g,'')}).filter(Boolean);
+}
+async function getOcr(){
+  if(ocr)return ocr;
+  ocr=await OCR.create(new URL('.',location.href).href);
+  return ocr;
+}
+$('go').onclick=async function(){
+  $('go').disabled=true;var all=[];
+  try{
+    st('Đang tải bộ đọc chữ (lần đầu mất khoảng 10–30 giây)…');var o=await getOcr();
+    for(var i=0;i<files.length;i++){
+      st('Đang đọc ảnh '+(i+1)+'/'+files.length+'…');
+      var r=await o.detect(await prep(files[i]));
+      assemble(r.texts||[]).forEach(function(l){if(all.indexOf(l)<0)all.push(l)});
+    }
+    $('ta').value=all.join('\n');$('res').classList.remove('hide');upd();
+    st(all.length?'Xong.':'Không tìm thấy số chứng từ. Hãy chụp gần hơn, thẳng và đủ sáng.',!all.length);
+  }catch(e){st('Lỗi: '+(e&&e.message||e),true)}
+  $('go').disabled=!files.length;
+};
+function lines(){return $('ta').value.split('\n').map(function(s){return s.trim()}).filter(Boolean)}
+function upd(){
+  var L=lines(),n=0,bad=[];
+  L.forEach(function(l,i){
+    var t=l.split('-');n+=t.length;var ok=true,p=-1;
+    t.forEach(function(x){if(!/^\d{4}$/.test(x)){ok=false;return}var v=+x;if(v<p)ok=false;p=v});
+    if(!ok)bad.push(i+1);
+  });
+  $('sum').textContent=L.length+' dòng · '+n+' số chứng từ';
+  $('warn').textContent=bad.length?'⚠ Cần kiểm tra lại dòng: '+bad.join(', ')+' (số lạ hoặc không tăng dần).':'';
+}
+$('ta').oninput=upd;
+$('cp').onclick=function(){var t=lines().join('\n'),ta=$('ta');
+  (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){st('Đã sao chép.')},function(){ta.select();document.execCommand('copy');st('Đã sao chép.')})};
+$('sh').onclick=function(){var t=lines().join('\n');
+  if(navigator.share){navigator.share({text:t}).catch(function(){})}
+  else{var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/plain'}));a.download='so-chung-tu.txt';a.click()}};
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(function(){});
+})();
+</script>
+</body>
+</html>
