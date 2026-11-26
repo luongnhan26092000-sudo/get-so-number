@@ -111,19 +111,22 @@ function clean(s){
 function assemble(items){
   var f=[];
   items.forEach(function(it){
-    var s=clean(frag(it.text||''));
-    if(!s||!(/^\d{4}$/.test(s)||((s.match(/\d/g)||[]).length>=4&&s.indexOf('-')>=0)))return;
+    var raw=frag(it.text||''),pts=raw.split(/\d{1,4}\/\d{1,2}\/\d{4}/);
     var b=it.box||[[0,0],[0,0],[0,0],[0,0]],ys=b.map(function(p){return p[1]}),xs=b.map(function(p){return p[0]});
     var y0=Math.min.apply(0,ys),y1=Math.max.apply(0,ys);
-    f.push({s:s,y:(y0+y1)/2,h:y1-y0,x:Math.min.apply(0,xs)});
+    pts.forEach(function(pt,k){
+      var s=clean(pt);
+      if(!s||!(/^\d{4}$/.test(s)||((s.match(/\d/g)||[]).length>=4&&s.indexOf('-')>=0)))return;
+      f.push({s:s,brk:k>0,y:(y0+y1)/2,h:y1-y0,x:Math.min.apply(0,xs)});
+    });
   });
   f.sort(function(a,b){return a.y-b.y});
   var g=[];f.forEach(function(x){var l=g[g.length-1];if(l&&Math.abs(x.y-l.y)<0.6*Math.max(x.h,l.h,1))l.p.push(x);else g.push({y:x.y,p:[x]})});
   var rows=[],cur='';
   g.forEach(function(l){
     l.p.sort(function(a,b){return a.x-b.x});
-    var s=l.p.map(function(x){return x.s}).join('');
-    cur+=s;if(!/-$/.test(s)){rows.push(cur);cur=''}
+    l.p.forEach(function(x){if(x.brk&&cur){rows.push(cur);cur=''}cur+=x.s});
+    if(!/-$/.test(l.p[l.p.length-1].s)){rows.push(cur);cur=''}
   });
   if(cur)rows.push(cur);
   return rows.map(function(r){return r.replace(/-{2,}/g,'-').replace(/^-|-$/g,'')}).filter(Boolean);
