@@ -29,6 +29,12 @@ button:disabled{opacity:.5}
 #sum{font-weight:600;margin:14px 0 6px}
 textarea{width:100%;min-height:220px;background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:12px;padding:12px;font:15px/1.7 ui-monospace,Consolas,monospace}
 .hide{display:none}
+details{margin-top:20px}summary{cursor:pointer;color:var(--ac);font-weight:600;min-height:32px}
+input[type=text],input[type=password]{width:100%;min-height:46px;margin:6px 0;padding:0 12px;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:var(--tx);font-size:16px}
+h2{font-size:17px;margin:24px 0 6px}
+.it{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px 12px;margin:10px 0}
+.it pre{margin:6px 0;white-space:pre-wrap;word-break:break-all;font:13px/1.6 ui-monospace,Consolas,monospace;max-height:220px;overflow:auto}
+.it .row{margin:6px 0 0}.it button{min-height:42px}
 </style>
 </head>
 <body>
@@ -45,8 +51,20 @@ textarea{width:100%;min-height:220px;background:var(--card);color:var(--tx);bord
   <div id="sum"></div><div id="warn" style="color:var(--er);font-size:14px;margin-bottom:6px"></div>
   <textarea id="ta" spellcheck="false"></textarea>
   <div class="row"><button class="p" id="cp">Sao chép</button><button class="s" id="sh">Chia sẻ / Lưu</button></div>
+  <button class="p" id="ghput" style="width:100%">☁ Lưu lên GitHub</button>
   <p style="color:var(--mut);font-size:13px">Có thể sửa trực tiếp trong ô trên. Hãy đối chiếu với bản gốc vì OCR có thể sót hoặc sai số.</p>
 </div>
+<details id="gh"><summary>⚙ Đồng bộ GitHub (điện thoại ⇄ máy tính)</summary>
+  <p style="color:var(--mut);font-size:13px;margin:6px 0">Nhập kho dữ liệu riêng tư (dạng <b>tên-bạn/so-data</b>) và token GitHub. Làm một lần trên mỗi thiết bị.</p>
+  <input type="text" id="ghrepo" placeholder="tên-bạn/so-data" autocapitalize="off" autocomplete="off">
+  <input type="password" id="ghtok" placeholder="Token GitHub (github_pat_…)" autocomplete="off">
+  <label style="display:block;margin:6px 0"><input type="checkbox" id="ghauto" checked> Tự lưu sau khi trích xuất</label>
+  <button class="s" id="ghsave" style="width:100%">Lưu cài đặt</button>
+</details>
+<h2>☁ Đã lưu trên GitHub</h2>
+<div class="row"><button class="s" id="ghref">Làm mới</button><button class="s" id="ghall">Sao chép tất cả</button></div>
+<div id="ghmsg" style="color:var(--mut);font-size:14px"></div>
+<div id="ghlist"></div>
 </main>
 <script src="ocr.js"></script>
 <script>
@@ -103,8 +121,8 @@ $('go').onclick=async function(){
       var r=await o.detect(await prep(files[i]));
       assemble(r.texts||[]).forEach(function(l){if(all.indexOf(l)<0)all.push(l)});
     }
-    $('ta').value=all.join('\n');$('res').classList.remove('hide');upd();
-    st(all.length?'Xong.':'Không tìm thấy số chứng từ. Hãy chụp gần hơn, thẳng và đủ sáng.',!all.length);
+    $('ta').value=all.join('\n');$('res').classList.remove('hide');upd();if(all.length&&cfg().auto!==false&&ok())await save(true);
+    if(!all.length||!(cfg().auto!==false&&ok()))st(all.length?'Xong.':'Không tìm thấy số chứng từ. Hãy chụp gần hơn, thẳng và đủ sáng.',!all.length);
   }catch(e){st('Lỗi: '+(e&&e.message||e),true)}
   $('go').disabled=!files.length;
 };
@@ -125,6 +143,67 @@ $('cp').onclick=function(){var t=lines().join('\n'),ta=$('ta');
 $('sh').onclick=function(){var t=lines().join('\n');
   if(navigator.share){navigator.share({text:t}).catch(function(){})}
   else{var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/plain'}));a.download='so-chung-tu.txt';a.click()}};
+
+var LS='sct-gh',DEF='luongnhan26092000-sudo/so-data',items=[];
+function cfg(){try{return JSON.parse(localStorage.getItem(LS)||'{}')}catch(e){return{}}}
+function msg(t,e){var m=$('ghmsg');m.textContent=t;m.style.color=e?'var(--er)':'var(--mut)'}
+function ok(){var c=cfg();return c.token&&c.repo}
+function gapi(p,o){var c=cfg();o=o||{};o.headers={'Authorization':'Bearer '+c.token,'Accept':'application/vnd.github+json'};o.cache='no-store';return fetch('https://api.github.com/repos/'+c.repo+'/contents/'+p,o)}
+function dec(b){return decodeURIComponent(escape(atob(b.replace(/\s/g,''))))}
+function enc(s){return btoa(unescape(encodeURIComponent(s)))}
+async function gload(){
+  var r=await gapi('data.json');
+  if(r.status===404)return{items:[],sha:null};
+  if(r.status===401||r.status===403)throw new Error('Token sai hoặc thiếu quyền (cần Contents: Read and write).');
+  if(!r.ok)throw new Error('GitHub trả lỗi '+r.status);
+  var j=await r.json(),a=[];try{a=JSON.parse(dec(j.content))}catch(e){}
+  return{items:a,sha:j.sha};
+}
+async function gput(a,sha){
+  var b={message:'update',content:enc(JSON.stringify(a))};if(sha)b.sha=sha;
+  var r=await gapi('data.json',{method:'PUT',body:JSON.stringify(b)});
+  if(r.status===409||r.status===422)return false;
+  if(r.status===404)throw new Error('Không thấy kho dữ liệu. Kiểm tra tên kho và token.');
+  if(!r.ok)throw new Error('GitHub trả lỗi '+r.status);return true;
+}
+async function mutate(fn){for(var k=0;k<3;k++){var d=await gload(),a=fn(d.items);if(await gput(a,d.sha))return a}throw new Error('Xung đột dữ liệu, hãy thử lại.')}
+function render(){
+  var L=$('ghlist');L.textContent='';
+  items.forEach(function(it){
+    var d=document.createElement('div');d.className='it';
+    var t=document.createElement('div');t.style.cssText='font-size:13px;color:var(--mut)';
+    t.textContent=new Date(it.t).toLocaleString('vi-VN')+' · '+it.lines.length+' dòng';
+    var p=document.createElement('pre');p.textContent=it.lines.join('\n');
+    var r=document.createElement('div');r.className='row';
+    var c=document.createElement('button');c.className='s';c.textContent='Sao chép';
+    c.onclick=function(){cp(it.lines.join('\n'))};
+    var x=document.createElement('button');x.className='s';x.textContent='Xóa';
+    x.onclick=async function(){if(!confirm('Xóa mục này?'))return;try{items=await mutate(function(a){return a.filter(function(y){return y.id!==it.id})});render();msg('Đã xóa.')}catch(e){msg(e.message,true)}};
+    r.appendChild(c);r.appendChild(x);d.appendChild(t);d.appendChild(p);d.appendChild(r);L.appendChild(d);
+  });
+}
+function cp(t){(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){msg('Đã sao chép.')},function(){msg('Máy không cho sao chép tự động.',true)})}
+async function refreshList(q){
+  if(!ok()){if(!q)msg('Chưa cài đặt GitHub. Mở mục ⚙ ở trên để nhập.',true);return}
+  try{if(!q)msg('Đang tải…');var d=await gload();items=d.items;render();msg(items.length?'':'Chưa có dữ liệu nào.')}catch(e){msg(e.message==='Failed to fetch'?'Không kết nối được api.github.com (mạng có thể chặn).':e.message,true)}
+}
+async function save(auto){
+  if(!ok()){st('Chưa cài đặt GitHub: mở mục ⚙ ở cuối trang.',true);$('gh').open=true;return}
+  var L=lines();if(!L.length)return;
+  try{st('Đang lưu lên GitHub…');items=await mutate(function(a){return [{id:Date.now(),t:new Date().toISOString(),lines:L}].concat(a)});render();msg('');st('Đã lưu lên GitHub.')}
+  catch(e){st('Lưu GitHub lỗi: '+(e.message==='Failed to fetch'?'không kết nối được api.github.com (mạng có thể chặn).':e.message),true)}
+}
+$('ghput').onclick=function(){save(false)};
+$('ghref').onclick=function(){refreshList(false)};
+$('ghall').onclick=function(){var s=[];items.forEach(function(i){s=s.concat(i.lines)});cp(s.join('\n'))};
+$('ghsave').onclick=function(){
+  var o={repo:$('ghrepo').value.trim().replace(/^https?:\/\/github\.com\//,'').replace(/\/$/,''),token:$('ghtok').value.trim(),auto:$('ghauto').checked};
+  try{localStorage.setItem(LS,JSON.stringify(o))}catch(e){}
+  msg('Đã lưu cài đặt.');$('gh').open=false;refreshList(false);
+};
+(function(){var c=cfg();$('ghrepo').value=c.repo||DEF;$('ghtok').value=c.token||'';$('ghauto').checked=c.auto!==false;if(!ok())$('gh').open=true;else refreshList(false)})();
+setInterval(function(){if(!document.hidden&&ok())refreshList(true)},20000);
+
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(function(){});
 })();
 </script>
