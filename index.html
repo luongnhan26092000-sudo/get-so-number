@@ -61,6 +61,9 @@ h2{font-size:17px;margin:24px 0 6px}
   <p style="color:var(--mut);font-size:13px;margin:6px 0">Nhập kho dữ liệu riêng tư (dạng <b>tên-bạn/so-data</b>) và token GitHub. Làm một lần trên mỗi thiết bị.</p>
   <input type="text" id="ghrepo" placeholder="tên-bạn/so-data" autocapitalize="off" autocomplete="off">
   <input type="password" id="ghtok" placeholder="Token GitHub (github_pat_…)" autocomplete="off">
+  <p style="color:var(--mut);font-size:13px;margin:10px 0 4px">🤖 Đọc bằng AI Claude (chính xác hơn OCR). Dán API key của bạn; khóa chỉ lưu trong trình duyệt này. Để trống thì dùng OCR trên máy.</p>
+  <input type="password" id="aikey" placeholder="Claude API key (sk-ant-…)" autocomplete="off">
+  <input type="text" id="aimodel" placeholder="Model (mặc định claude-sonnet-5-5)" autocapitalize="off" autocomplete="off">
   <label style="display:block;margin:6px 0"><input type="checkbox" id="ghauto" checked> Tự lưu sau khi trích xuất</label>
   <button class="s" id="ghsave" style="width:100%">Lưu cài đặt</button>
 </details>
@@ -68,7 +71,7 @@ h2{font-size:17px;margin:24px 0 6px}
 <div class="row"><button class="s" id="ghref">Làm mới</button><button class="s" id="ghall">Sao chép tất cả</button></div>
 <div id="ghmsg" style="color:var(--mut);font-size:14px"></div>
 <div id="ghlist"></div>
-<div style="text-align:center;color:var(--mut);font-size:12px;margin-top:28px">Phiên bản 10</div>
+<div style="text-align:center;color:var(--mut);font-size:12px;margin-top:28px">Phiên bản 12</div>
 </main>
 <script src="ocr.js"></script>
 <script>
@@ -160,49 +163,29 @@ function assemble(items){
   var hm=hs.length?hs[Math.floor(hs.length/2)]:20;
   var m=gaps.length?gaps[Math.floor(gaps.length*0.3)]:hm*1.5;
   if(!(m>0))m=hm*1.5;
-  var cells=[],cc=null;
-  L.forEach(function(l,i){
-    var split=false;
-    if(i>0){
-      if(l.brk)split=true;
-      else{var gap=l.y-L[i-1].y;split=gap>1.3*m&&!(/-$/.test(L[i-1].s)&&gap<2.2*m)}
-    }
-    if(!cc||split){cc=[];cells.push(cc)}
-    cc.push(l);l.c=cells.length-1;l.id=i;
-  });
   function fnum(s){var q=s.match(/\d+/);return q?+q[0]:NaN}
   function lnum(s){var q=s.match(/\d+(?=-?$)/);return q?+q[0]:NaN}
-  var par=cells.map(function(_,i){return i});
-  function find(x){while(par[x]!==x){par[x]=par[par[x]];x=par[x]}return x}
-  function uni(a,b){a=find(a);b=find(b);if(a!==b)par[Math.max(a,b)]=Math.min(a,b)}
+  L.forEach(function(l,i){l.id=i});
   var nx={},hin={};
   L.forEach(function(s){
     var tk=s.s.split('-').filter(Boolean);
-    if(!(tk.length>=6||/-$/.test(s.s)))return;
-    var lv=lnum(s.s),best=null,bd=9;
+    if(!(tk.length>=5||/-$/.test(s.s)))return;
+    var lv=lnum(s.s),best=null,bs=Infinity;
     L.forEach(function(u){
       if(u===s||u.brk||hin[u.id])return;
       var d=fnum(u.s)-lv;
-      if(d>=1&&d<=3&&d<bd){bd=d;best=u}
+      if(d>=0&&d<=4){var sc=d*100000+Math.abs(u.y-s.y);if(sc<bs){bs=sc;best=u}}
     });
-    if(best){nx[s.id]=best;hin[best.id]=true;uni(s.c,best.c)}
+    if(best){nx[s.id]=best;hin[best.id]=true}
   });
-  var comps={},keys=[];
-  L.forEach(function(l){var r=find(l.c);if(!comps[r]){comps[r]=[];keys.push(r)}comps[r].push(l)});
-  var rows=keys.map(function(k){
-    var c=comps[k],hd=c.filter(function(l){return !hin[l.id]});
-    var fv=hd.map(function(l){return fnum(l.s)});
-    if(hd.length>1&&!fv.some(isNaN)&&Math.max.apply(0,fv)-Math.min.apply(0,fv)<=3000){
-      hd.forEach(function(l,i){l.v=fv[i];l.i=i});
-      hd.sort(function(a,b){return a.v-b.v||a.i-b.i});
-    }
-    var res=[],seen={};
-    hd.forEach(function(x){while(x&&!seen[x.id]){seen[x.id]=1;res.push(x);x=nx[x.id]}});
-    c.forEach(function(l){if(!seen[l.id]){seen[l.id]=1;res.push(l)}});
+  var rows=[],seen={};
+  function chain(x){
     var cur='';
-    res.forEach(function(l){if(cur&&!/-$/.test(cur))cur+='-';cur+=l.s});
-    return cur;
-  });
+    while(x&&!seen[x.id]){seen[x.id]=1;if(cur&&!/-$/.test(cur))cur+='-';cur+=x.s;x=nx[x.id]}
+    if(cur)rows.push(cur);
+  }
+  L.forEach(function(l){if(!hin[l.id])chain(l)});
+  L.forEach(function(l){if(!seen[l.id])chain(l)});
   return rows.map(function(r){return r.replace(/-{2,}/g,'-').replace(/^-|-$/g,'')}).filter(Boolean);
 }
 async function getOcr(){
@@ -210,18 +193,68 @@ async function getOcr(){
   ocr=await OCR.create(new URL('.',location.href).href);
   return ocr;
 }
+var AIP='Các ảnh là bảng kê có các cột STT, Ngày, Số chứng từ, Nơi đi, Nơi đến. Chỉ đọc cột "Số chứng từ".\nQuy tắc:\n- Mỗi ô của cột (mỗi STT) = đúng MỘT dòng kết quả. Nối tất cả số trong ô, theo thứ tự đọc từ trên xuống dưới, bằng dấu gạch ngang (-), kể cả khi ô xuống dòng nhiều lần.\n- Mỗi số có 4 chữ số, giữ nguyên số 0 ở đầu (ví dụ 0098). Không tự sửa, không thêm, không bỏ số nào, kể cả khi số nhảy cóc (ví dụ 7973-7975).\n- Không ghi STT, ngày, nơi đi, nơi đến, và không ghi nội dung của trang giấy khác lọt vào ảnh.\n- Nhiều ảnh: đọc lần lượt; nếu một ô bị cắt ở cuối ảnh trước và lặp lại ở đầu ảnh sau thì chỉ ghi một lần.\n- Chỉ trả về các dòng kết quả, mỗi dòng một ô, không giải thích, không đánh số, không dùng markdown.';
+function aiCfg(){try{return JSON.parse(localStorage.getItem('sct-ai')||'{}')}catch(e){return{}}}
+function b64(b){return new Promise(function(res,rej){var r=new FileReader();r.onload=function(){res(String(r.result).split(',')[1])};r.onerror=function(){rej(new Error('Không đọc được ảnh'))};r.readAsDataURL(b)})}
+function prepJpg(f){return new Promise(function(res,rej){
+  var im=new Image();im.onload=function(){
+    var s=Math.min(1,2000/Math.max(im.width,im.height)),c=document.createElement('canvas');
+    c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);
+    var x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);
+    c.toBlob(function(b){b?res(b):rej(new Error('Không xử lý được ảnh'))},'image/jpeg',0.92);
+  };im.onerror=function(){rej(new Error('Không mở được ảnh'))};im.src=URL.createObjectURL(f)})}
+async function aiRead(c){
+  var content=[];
+  for(var i=0;i<files.length;i++){
+    content.push({type:'image',source:{type:'base64',media_type:'image/jpeg',data:await b64(await prepJpg(files[i]))}});
+  }
+  content.push({type:'text',text:AIP});
+  var r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+    headers:{'content-type':'application/json','x-api-key':c.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:c.model||'claude-sonnet-5-5',max_tokens:8192,messages:[{role:'user',content:content}]})});
+  if(!r.ok){var t='';try{t=(await r.json()).error.message}catch(e){}throw new Error(r.status+(t?' '+t:''))}
+  var j=await r.json();
+  return (j.content||[]).map(function(x){return x.text||''}).join('\n');
+}
+function parseAi(t){
+  var out=[];
+  t.split(/\r?\n/).forEach(function(s){
+    s=s.replace(/[–—−]/g,'-').replace(/[`*\s]/g,'');
+    if(/^\d+(-\d+)*$/.test(s)&&out.indexOf(s)<0)out.push(s);
+  });
+  return out;
+}
 $('go').onclick=async function(){
-  busy=true;$('go').disabled=true;var all=[],rawAll='';
+  busy=true;$('go').disabled=true;var all=[],rawAll='',used='';
   try{
-    st('Đang tải bộ đọc chữ (lần đầu mất khoảng 10–30 giây)…');var o=await getOcr();
-    for(var i=0;i<files.length;i++){
-      st('Đang đọc ảnh '+(i+1)+'/'+files.length+'…');
-      var r=await o.detect(await prep(files[i]));
-      rawAll+='--- ảnh '+(i+1)+'\n'+(r.texts||[]).map(function(t){var b=(t.box&&t.box[0])||[0,0];return Math.round(b[1])+','+Math.round(b[0])+' | '+t.text}).join('\n')+'\n';
-      assemble(r.texts||[]).forEach(function(l){if(all.indexOf(l)<0)all.push(l)});
+    var ac=aiCfg();
+    if(ac.key){
+      try{
+        st('Đang đọc bằng AI…');
+        var txt=await aiRead(ac);
+        all=parseAi(txt);rawAll='AI:\n'+txt;
+        if(!all.length)throw new Error('AI không trả về số chứng từ');
+        used='ai';
+      }catch(e){
+        all=[];rawAll='';
+        var em=(e&&e.message)||String(e);
+        st('AI lỗi ('+(em==='Failed to fetch'?'không kết nối được api.anthropic.com, mạng có thể chặn':em)+'). Chuyển sang OCR trên máy…',true);
+        await new Promise(function(r){setTimeout(r,1500)});
+      }
     }
-    $('raw').value=rawAll;$('ta').value=all.join('\n');$('res').classList.remove('hide');upd();if(all.length&&cfg().auto!==false&&ok())await save(true);
-    if(!all.length||!(cfg().auto!==false&&ok()))st(all.length?'Xong.':'Không tìm thấy số chứng từ. Hãy chụp gần hơn, thẳng và đủ sáng.',!all.length);
+    if(!used){
+      st('Đang tải bộ đọc chữ (lần đầu mất khoảng 10–30 giây)…');var o=await getOcr();
+      for(var i=0;i<files.length;i++){
+        st('Đang đọc ảnh '+(i+1)+'/'+files.length+'…');
+        var r=await o.detect(await prep(files[i]));
+        rawAll+='--- ảnh '+(i+1)+'\n'+(r.texts||[]).map(function(t){var b=(t.box&&t.box[0])||[0,0];return Math.round(b[1])+','+Math.round(b[0])+' | '+t.text}).join('\n')+'\n';
+        assemble(r.texts||[]).forEach(function(l){if(all.indexOf(l)<0)all.push(l)});
+      }
+    }
+    $('raw').value=rawAll;$('ta').value=all.join('\n');$('res').classList.remove('hide');upd();
+    var saved=all.length&&cfg().auto!==false&&ok();
+    if(saved)await save(true);
+    if(!saved)st(all.length?'Xong ('+(used==='ai'?'đọc bằng AI':'OCR trên máy')+').':'Không tìm thấy số chứng từ. Hãy chụp gần hơn, thẳng và đủ sáng.',!all.length);
   }catch(e){st('Lỗi: '+(e&&e.message||e),true)}
   busy=false;$('go').disabled=!files.length;
 };
@@ -297,10 +330,10 @@ $('ghref').onclick=function(){refreshList(false)};
 $('ghall').onclick=function(){var s=[];items.forEach(function(i){s=s.concat(i.lines)});cp(s.join('\n'))};
 $('ghsave').onclick=function(){
   var o={repo:$('ghrepo').value.trim().replace(/^https?:\/\/github\.com\//,'').replace(/\/$/,''),token:$('ghtok').value.trim(),auto:$('ghauto').checked};
-  try{localStorage.setItem(LS,JSON.stringify(o))}catch(e){}
+  try{localStorage.setItem(LS,JSON.stringify(o));localStorage.setItem('sct-ai',JSON.stringify({key:$('aikey').value.trim(),model:$('aimodel').value.trim()}))}catch(e){}
   msg('Đã lưu cài đặt.');$('gh').open=false;refreshList(false);
 };
-(function(){var c=cfg();$('ghrepo').value=c.repo||DEF;$('ghtok').value=c.token||'';$('ghauto').checked=c.auto!==false;if(!ok())$('gh').open=true;else refreshList(false)})();
+(function(){var c=cfg();$('ghrepo').value=c.repo||DEF;$('ghtok').value=c.token||'';$('ghauto').checked=c.auto!==false;var a2=aiCfg();$('aikey').value=a2.key||'';$('aimodel').value=a2.model||'';if(!ok())$('gh').open=true;else refreshList(false)})();
 setInterval(function(){if(!document.hidden&&ok())refreshList(true)},20000);
 
 var ap=$('apaste');try{ap.checked=localStorage.getItem('sct-ap')!=='0'}catch(e){}
