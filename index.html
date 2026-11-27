@@ -50,6 +50,7 @@ h2{font-size:17px;margin:24px 0 6px}
 <button class="p" id="go" style="width:100%" disabled>Trích xuất</button>
 <div id="st"></div>
 <div id="res" class="hide">
+  <details style="margin:6px 0"><summary style="font-weight:400;font-size:13px;color:var(--mut)">Dữ liệu thô OCR (để gửi báo lỗi)</summary><textarea id="raw" readonly style="min-height:120px;font-size:12px"></textarea></details>
   <div id="sum"></div><div id="warn" style="color:var(--er);font-size:14px;margin-bottom:6px"></div>
   <textarea id="ta" spellcheck="false"></textarea>
   <div class="row"><button class="p" id="cp">Sao chép</button><button class="s" id="sh">Chia sẻ / Lưu</button></div>
@@ -112,6 +113,10 @@ function clean(s){
   });
   return out.join('-')+(end&&out.length?'-':'');
 }
+function nodate(s){
+  return s.replace(/\d{1,4}[\/\-.][\dOo]{1,2}[\/\-.]2[0Oo][\dOo]{2}/g,'\u0001')
+    .replace(/(^|-)(?:0[1-9]|[12]\d|3[01])(?:0[1-9]|1[0-2])20\d{2}(?=-|$|\d{4}(?:-|$))/g,'$1\u0001');
+}
 function bx(it){
   var b=it.box;if(!b||b.length<4)return{cx:0,cy:0,w:0,h:20,t:0,x:0};
   var d1=[b[1][0]-b[0][0],b[1][1]-b[0][1]],d2=[b[2][0]-b[1][0],b[2][1]-b[1][1]];
@@ -126,7 +131,7 @@ function assemble(items){
   tl.sort(function(a,b){return a-b});
   var tn=tl.length?Math.tan(tl[Math.floor(tl.length/2)]):0;if(!isFinite(tn)||Math.abs(tn)>0.5)tn=0;
   items.forEach(function(it){
-    var raw=frag(it.text||''),pts=raw.split(/\d{1,4}\/\d{1,2}\/\d{4}/);
+    var raw=frag(it.text||''),pts=nodate(raw).split('\u0001');
     var q=bx(it);
     pts.forEach(function(pt,k){
       var s=clean(pt);
@@ -173,15 +178,16 @@ async function getOcr(){
   return ocr;
 }
 $('go').onclick=async function(){
-  busy=true;$('go').disabled=true;var all=[];
+  busy=true;$('go').disabled=true;var all=[],rawAll='';
   try{
     st('Đang tải bộ đọc chữ (lần đầu mất khoảng 10–30 giây)…');var o=await getOcr();
     for(var i=0;i<files.length;i++){
       st('Đang đọc ảnh '+(i+1)+'/'+files.length+'…');
       var r=await o.detect(await prep(files[i]));
+      rawAll+='--- ảnh '+(i+1)+'\n'+(r.texts||[]).map(function(t){var b=(t.box&&t.box[0])||[0,0];return Math.round(b[1])+','+Math.round(b[0])+' | '+t.text}).join('\n')+'\n';
       assemble(r.texts||[]).forEach(function(l){if(all.indexOf(l)<0)all.push(l)});
     }
-    $('ta').value=all.join('\n');$('res').classList.remove('hide');upd();if(all.length&&cfg().auto!==false&&ok())await save(true);
+    $('raw').value=rawAll;$('ta').value=all.join('\n');$('res').classList.remove('hide');upd();if(all.length&&cfg().auto!==false&&ok())await save(true);
     if(!all.length||!(cfg().auto!==false&&ok()))st(all.length?'Xong.':'Không tìm thấy số chứng từ. Hãy chụp gần hơn, thẳng và đủ sáng.',!all.length);
   }catch(e){st('Lỗi: '+(e&&e.message||e),true)}
   busy=false;$('go').disabled=!files.length;
