@@ -109,6 +109,7 @@ function clean(s){
     if(i===0&&/^20\d{6}$/.test(x))x=x.slice(4);
     else if(sl&&x.length>4)x=x.slice(-4);
     else if(i===0&&x.length>8)x=x.slice(-4);
+    else if(i===0&&x.length>=5&&x.length<=7)x=x.slice(-4);
     if(x.length===8){out.push(x.slice(0,4));out.push(x.slice(4))}else out.push(x);
   });
   return out.join('-')+(end&&out.length?'-':'');
@@ -118,12 +119,12 @@ function nodate(s){
     .replace(/(^|-)(?:0[1-9]|[12]\d|3[01])(?:0[1-9]|1[0-2])20\d{2}(?=-|$|\d{4}(?:-|$))/g,'$1\u0001');
 }
 function bx(it){
-  var b=it.box;if(!b||b.length<4)return{cx:0,cy:0,w:0,h:20,t:0,x:0};
+  var b=it.box;if(!b||b.length<4)return{cx:0,cy:0,w:0,h:20,t:0,x:0,x1:0};
   var d1=[b[1][0]-b[0][0],b[1][1]-b[0][1]],d2=[b[2][0]-b[1][0],b[2][1]-b[1][1]];
   var l1=Math.hypot(d1[0],d1[1]),l2=Math.hypot(d2[0],d2[1]),d=l1>=l2?d1:d2;
   if(d[0]<0)d=[-d[0],-d[1]];
   var xs=b.map(function(p){return p[0]}),ys=b.map(function(p){return p[1]});
-  return{cx:(xs[0]+xs[1]+xs[2]+xs[3])/4,cy:(ys[0]+ys[1]+ys[2]+ys[3])/4,w:Math.max(l1,l2),h:Math.max(Math.min(l1,l2),1),t:Math.atan2(d[1],d[0]),x:Math.min.apply(0,xs)};
+  return{cx:(xs[0]+xs[1]+xs[2]+xs[3])/4,cy:(ys[0]+ys[1]+ys[2]+ys[3])/4,w:Math.max(l1,l2),h:Math.max(Math.min(l1,l2),1),t:Math.atan2(d[1],d[0]),x:Math.min.apply(0,xs),x1:Math.max.apply(0,xs)};
 }
 function assemble(items){
   var f=[];
@@ -136,17 +137,17 @@ function assemble(items){
     pts.forEach(function(pt,k){
       var s=clean(pt);
       if(!s||!(/^\d{4}$/.test(s)||((s.match(/\d/g)||[]).length>=4&&s.indexOf('-')>=0)))return;
-      f.push({s:s,brk:k>0,y:q.cy-q.cx*tn,h:q.h,x:q.x});
+      f.push({s:s,brk:k>0,y:q.cy-q.cx*tn,h:q.h,x:q.x,x1:q.x1});
     });
   });
   f.sort(function(a,b){return a.y-b.y});
-  var g=[];f.forEach(function(x){var l=g[g.length-1];if(l&&Math.abs(x.y-l.y)<0.6*Math.max(x.h,l.h,1))l.p.push(x);else g.push({y:x.y,h:x.h,p:[x]})});
+  var g=[];f.forEach(function(x){var l=g[g.length-1];if(l&&Math.abs(x.y-l.y)<0.6*Math.max(x.h,l.h,1)&&!l.p.some(function(o){return Math.min(o.x1,x.x1)-Math.max(o.x,x.x)>0.25*Math.min(o.x1-o.x,x.x1-x.x)}))l.p.push(x);else g.push({y:x.y,h:x.h,p:[x]})});
   var L=[];
   g.forEach(function(gr){
     gr.p.sort(function(a,b){return a.x-b.x});
     var seg=null;
     gr.p.forEach(function(x){
-      if(!seg||x.brk){seg={y:gr.y,h:gr.h,s:'',brk:!!seg&&!!x.brk};L.push(seg)}
+      if(!seg||x.brk){seg={y:gr.y,h:gr.h,s:'',brk:!!x.brk};L.push(seg)}
       if(seg.s&&!/-$/.test(seg.s)&&!/^-/.test(x.s))seg.s+='-';
       seg.s+=x.s;
     });
@@ -157,7 +158,7 @@ function assemble(items){
   gaps.sort(function(a,b){return a-b});hs.sort(function(a,b){return a-b});
   var hm=hs.length?hs[Math.floor(hs.length/2)]:20;
   var m=gaps.length?gaps[Math.floor(gaps.length*0.3)]:hm*1.5;
-  if(!(m>hm*0.8))m=hm*1.5;
+  if(!(m>0))m=hm*1.5;
   var rows=[],cur='';
   L.forEach(function(l,i){
     var split=false;
