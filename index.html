@@ -42,6 +42,8 @@ h2{font-size:17px;margin:24px 0 6px}
 <h1>🧾 Trích xuất số chứng từ</h1>
 <button class="p" id="cam">📷 Chụp ảnh</button>
 <div class="row"><button class="s" id="gal">🖼 Chọn từ thư viện</button><button class="s" id="clr">Xóa</button></div>
+<button class="s" id="pst" style="width:100%">📋 Dán ảnh từ clipboard (hoặc nhấn Ctrl+V)</button>
+<label style="display:block;margin:8px 0;font-size:14px;color:var(--mut)"><input type="checkbox" id="apaste" checked> Tự trích xuất ngay khi dán ảnh</label>
 <input id="f1" type="file" accept="image/*" capture="environment" class="hide">
 <input id="f2" type="file" accept="image/*" multiple class="hide">
 <div id="th"></div>
@@ -69,7 +71,7 @@ h2{font-size:17px;margin:24px 0 6px}
 <script src="ocr.js"></script>
 <script>
 (function(){
-var $=function(i){return document.getElementById(i)},files=[],ocr=null;
+var $=function(i){return document.getElementById(i)},files=[],ocr=null,busy=false;
 function st(t,e){$('st').textContent=t;$('st').className=e?'err':''}
 function refresh(){var t=$('th');t.textContent='';files.forEach(function(f){var i=document.createElement('img');i.src=URL.createObjectURL(f);t.appendChild(i)});$('go').disabled=!files.length}
 function add(l){Array.prototype.forEach.call(l,function(f){if(/^image\//.test(f.type))files.push(f)});refresh();st(files.length+' ảnh sẵn sàng.')}
@@ -171,7 +173,7 @@ async function getOcr(){
   return ocr;
 }
 $('go').onclick=async function(){
-  $('go').disabled=true;var all=[];
+  busy=true;$('go').disabled=true;var all=[];
   try{
     st('Đang tải bộ đọc chữ (lần đầu mất khoảng 10–30 giây)…');var o=await getOcr();
     for(var i=0;i<files.length;i++){
@@ -182,7 +184,7 @@ $('go').onclick=async function(){
     $('ta').value=all.join('\n');$('res').classList.remove('hide');upd();if(all.length&&cfg().auto!==false&&ok())await save(true);
     if(!all.length||!(cfg().auto!==false&&ok()))st(all.length?'Xong.':'Không tìm thấy số chứng từ. Hãy chụp gần hơn, thẳng và đủ sáng.',!all.length);
   }catch(e){st('Lỗi: '+(e&&e.message||e),true)}
-  $('go').disabled=!files.length;
+  busy=false;$('go').disabled=!files.length;
 };
 function lines(){return $('ta').value.split('\n').map(function(s){return s.trim()}).filter(Boolean)}
 function upd(){
@@ -261,6 +263,30 @@ $('ghsave').onclick=function(){
 };
 (function(){var c=cfg();$('ghrepo').value=c.repo||DEF;$('ghtok').value=c.token||'';$('ghauto').checked=c.auto!==false;if(!ok())$('gh').open=true;else refreshList(false)})();
 setInterval(function(){if(!document.hidden&&ok())refreshList(true)},20000);
+
+var ap=$('apaste');try{ap.checked=localStorage.getItem('sct-ap')!=='0'}catch(e){}
+ap.onchange=function(){try{localStorage.setItem('sct-ap',ap.checked?'1':'0')}catch(e){}};
+function pasted(l){
+  if(!l.length)return;
+  if(busy){st('Đang xử lý, hãy đợi xong rồi dán lại.',true);return}
+  files=l;refresh();$('res').classList.add('hide');$('warn').textContent='';
+  st('Đã dán '+l.length+' ảnh.');
+  if(ap.checked)$('go').click();
+}
+document.addEventListener('paste',function(e){
+  var t=e.target&&e.target.tagName;if(t==='INPUT'||t==='TEXTAREA')return;
+  var l=[];Array.prototype.forEach.call((e.clipboardData&&e.clipboardData.items)||[],function(it){
+    if(it.kind==='file'&&/^image\//.test(it.type)){var f=it.getAsFile();if(f)l.push(f)}});
+  if(l.length){e.preventDefault();pasted(l)}
+});
+$('pst').onclick=async function(){
+  try{
+    var its=await navigator.clipboard.read(),l=[];
+    for(var i=0;i<its.length;i++)for(var k=0;k<its[i].types.length;k++){
+      var ty=its[i].types[k];if(/^image\//.test(ty)){var b=await its[i].getType(ty);l.push(new File([b],'paste.png',{type:ty}))}}
+    if(l.length)pasted(l);else st('Clipboard không có ảnh. Hãy chụp màn hình (Win+Shift+S) hoặc copy ảnh trước.',true);
+  }catch(e){st('Trình duyệt chưa cho đọc clipboard. Hãy nhấn Ctrl+V ngay trên trang.',true)}
+};
 
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(function(){});
 })();
