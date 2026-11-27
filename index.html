@@ -68,7 +68,7 @@ h2{font-size:17px;margin:24px 0 6px}
 <div class="row"><button class="s" id="ghref">Làm mới</button><button class="s" id="ghall">Sao chép tất cả</button></div>
 <div id="ghmsg" style="color:var(--mut);font-size:14px"></div>
 <div id="ghlist"></div>
-<div style="text-align:center;color:var(--mut);font-size:12px;margin-top:28px">Phiên bản 8</div>
+<div style="text-align:center;color:var(--mut);font-size:12px;margin-top:28px">Phiên bản 9</div>
 </main>
 <script src="ocr.js"></script>
 <script>
@@ -160,18 +160,39 @@ function assemble(items){
   var hm=hs.length?hs[Math.floor(hs.length/2)]:20;
   var m=gaps.length?gaps[Math.floor(gaps.length*0.3)]:hm*1.5;
   if(!(m>0))m=hm*1.5;
-  var rows=[],cur='';
+  var cells=[],cc=null;
   L.forEach(function(l,i){
     var split=false;
     if(i>0){
       if(l.brk)split=true;
       else{var gap=l.y-L[i-1].y;split=gap>1.3*m&&!(/-$/.test(L[i-1].s)&&gap<2.2*m)}
     }
-    if(split&&cur){rows.push(cur);cur=''}
-    if(cur&&!/-$/.test(cur))cur+='-';
-    cur+=l.s;
+    if(!cc||split){cc=[];cells.push(cc)}
+    cc.push(l);
   });
-  if(cur)rows.push(cur);
+  function fnum(s){var q=s.match(/\d+/);return q?+q[0]:NaN}
+  function lnum(s){var q=s.match(/\d+(?=-?$)/);return q?+q[0]:NaN}
+  cells.forEach(function(c){
+    if(c.length<2)return;
+    var fv=c.map(function(l){return fnum(l.s)});
+    if(fv.some(isNaN)||Math.max.apply(0,fv)-Math.min.apply(0,fv)>3000)return;
+    c.forEach(function(l,i){l.i=i;l.v=fv[i]});
+    c.sort(function(a,b){return a.v-b.v||a.i-b.i});
+  });
+  var mg=[];
+  cells.forEach(function(c){
+    var p=mg[mg.length-1];
+    if(p&&!c[0].brk){
+      var last=p[p.length-1],d=fnum(c[0].s)-lnum(last.s);
+      if(/-$/.test(last.s)&&d>=1&&d<=3){p.push.apply(p,c);return}
+    }
+    mg.push(c);
+  });
+  var rows=mg.map(function(c){
+    var cur='';
+    c.forEach(function(l){if(cur&&!/-$/.test(cur))cur+='-';cur+=l.s});
+    return cur;
+  });
   return rows.map(function(r){return r.replace(/-{2,}/g,'-').replace(/^-|-$/g,'')}).filter(Boolean);
 }
 async function getOcr(){
