@@ -71,12 +71,12 @@ h2{font-size:17px;margin:24px 0 6px}
 <div class="row"><button class="s" id="ghref">Làm mới</button><button class="s" id="ghall">Sao chép tất cả</button></div>
 <div id="ghmsg" style="color:var(--mut);font-size:14px"></div>
 <div id="ghlist"></div>
-<div style="text-align:center;color:var(--mut);font-size:12px;margin-top:28px">Phiên bản 12</div>
+<div style="text-align:center;color:var(--mut);font-size:12px;margin-top:28px">Phiên bản 13</div>
 </main>
 <script src="ocr.js"></script>
 <script>
 (function(){
-var $=function(i){return document.getElementById(i)},files=[],ocr=null,busy=false;
+var $=function(i){return document.getElementById(i)},files=[],ocr=null,busy=false,eng='';
 function st(t,e){$('st').textContent=t;$('st').className=e?'err':''}
 function refresh(){var t=$('th');t.textContent='';files.forEach(function(f){var i=document.createElement('img');i.src=URL.createObjectURL(f);t.appendChild(i)});$('go').disabled=!files.length}
 function add(l){Array.prototype.forEach.call(l,function(f){if(/^image\//.test(f.type))files.push(f)});refresh();st(files.length+' ảnh sẵn sàng.')}
@@ -117,6 +117,32 @@ function clean(s){
     if(x.length===8){out.push(x.slice(0,4));out.push(x.slice(4))}else out.push(x);
   });
   return out.join('-')+(end&&out.length?'-':'');
+}
+function chainRows(L){
+  function fnum(s){var q=s.match(/\d+/);return q?+q[0]:NaN}
+  function lnum(s){var q=s.match(/\d+(?=-?$)/);return q?+q[0]:NaN}
+  L.forEach(function(l,i){l.id=i});
+  var nx={},hin={};
+  L.forEach(function(s){
+    var tk=s.s.split('-').filter(Boolean);
+    if(!(tk.length>=5||/-$/.test(s.s)))return;
+    var lv=lnum(s.s),best=null,bs=Infinity;
+    L.forEach(function(u){
+      if(u===s||u.brk||hin[u.id])return;
+      var d=fnum(u.s)-lv;
+      if(d>=0&&d<=4){var sc=d*100000+Math.abs(u.y-s.y);if(sc<bs){bs=sc;best=u}}
+    });
+    if(best){nx[s.id]=best;hin[best.id]=true}
+  });
+  var rows=[],seen={};
+  function chain(x){
+    var cur='';
+    while(x&&!seen[x.id]){seen[x.id]=1;if(cur&&!/-$/.test(cur))cur+='-';cur+=x.s;x=nx[x.id]}
+    if(cur)rows.push(cur);
+  }
+  L.forEach(function(l){if(!hin[l.id])chain(l)});
+  L.forEach(function(l){if(!seen[l.id])chain(l)});
+  return rows;
 }
 function nodate(s){
   return s.replace(/\d{1,4}[\/\-.][\dOo]{1,2}[\/\-.]2[0Oo][\dOo]{2}/g,'\u0001')
@@ -163,29 +189,7 @@ function assemble(items){
   var hm=hs.length?hs[Math.floor(hs.length/2)]:20;
   var m=gaps.length?gaps[Math.floor(gaps.length*0.3)]:hm*1.5;
   if(!(m>0))m=hm*1.5;
-  function fnum(s){var q=s.match(/\d+/);return q?+q[0]:NaN}
-  function lnum(s){var q=s.match(/\d+(?=-?$)/);return q?+q[0]:NaN}
-  L.forEach(function(l,i){l.id=i});
-  var nx={},hin={};
-  L.forEach(function(s){
-    var tk=s.s.split('-').filter(Boolean);
-    if(!(tk.length>=5||/-$/.test(s.s)))return;
-    var lv=lnum(s.s),best=null,bs=Infinity;
-    L.forEach(function(u){
-      if(u===s||u.brk||hin[u.id])return;
-      var d=fnum(u.s)-lv;
-      if(d>=0&&d<=4){var sc=d*100000+Math.abs(u.y-s.y);if(sc<bs){bs=sc;best=u}}
-    });
-    if(best){nx[s.id]=best;hin[best.id]=true}
-  });
-  var rows=[],seen={};
-  function chain(x){
-    var cur='';
-    while(x&&!seen[x.id]){seen[x.id]=1;if(cur&&!/-$/.test(cur))cur+='-';cur+=x.s;x=nx[x.id]}
-    if(cur)rows.push(cur);
-  }
-  L.forEach(function(l){if(!hin[l.id])chain(l)});
-  L.forEach(function(l){if(!seen[l.id])chain(l)});
+  var rows=chainRows(L);
   return rows.map(function(r){return r.replace(/-{2,}/g,'-').replace(/^-|-$/g,'')}).filter(Boolean);
 }
 async function getOcr(){
@@ -232,7 +236,7 @@ $('go').onclick=async function(){
       try{
         st('Đang đọc bằng AI…');
         var txt=await aiRead(ac);
-        all=parseAi(txt);rawAll='AI:\n'+txt;
+        all=chainRows(parseAi(txt).map(function(s,i){return{s:s,y:i,brk:false}}));rawAll='AI:\n'+txt;
         if(!all.length)throw new Error('AI không trả về số chứng từ');
         used='ai';
       }catch(e){
@@ -251,7 +255,7 @@ $('go').onclick=async function(){
         assemble(r.texts||[]).forEach(function(l){if(all.indexOf(l)<0)all.push(l)});
       }
     }
-    $('raw').value=rawAll;$('ta').value=all.join('\n');$('res').classList.remove('hide');upd();
+    eng=used==='ai'?'đọc bằng AI':'OCR trên máy';$('raw').value='v13\n'+rawAll;$('ta').value=all.join('\n');$('res').classList.remove('hide');upd();
     var saved=all.length&&cfg().auto!==false&&ok();
     if(saved)await save(true);
     if(!saved)st(all.length?'Xong ('+(used==='ai'?'đọc bằng AI':'OCR trên máy')+').':'Không tìm thấy số chứng từ. Hãy chụp gần hơn, thẳng và đủ sáng.',!all.length);
@@ -266,7 +270,7 @@ function upd(){
     t.forEach(function(x){if(!/^\d{4}$/.test(x)){ok=false;return}var v=+x;if(v<p)ok=false;p=v});
     if(!ok)bad.push(i+1);
   });
-  $('sum').textContent=L.length+' dòng · '+n+' số chứng từ';
+  $('sum').textContent=L.length+' dòng · '+n+' số chứng từ'+(eng?' · '+eng:'');
   $('warn').textContent=bad.length?'⚠ Cần kiểm tra lại dòng: '+bad.join(', ')+' (số lạ hoặc không tăng dần).':'';
 }
 $('ta').oninput=upd;
