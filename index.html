@@ -71,7 +71,7 @@ h2{font-size:17px;margin:24px 0 6px}
 <div class="row"><button class="s" id="ghref">Làm mới</button><button class="s" id="ghall">Sao chép tất cả</button></div>
 <div id="ghmsg" style="color:var(--mut);font-size:14px"></div>
 <div id="ghlist"></div>
-<div style="text-align:center;color:var(--mut);font-size:12px;margin-top:28px">Phiên bản 16</div>
+<div style="text-align:center;color:var(--mut);font-size:12px;margin-top:28px">Phiên bản 17</div>
 </main>
 <script src="ocr.js"></script>
 <script>
@@ -261,7 +261,7 @@ function parseAi(t){
   return out;
 }
 $('go').onclick=async function(){
-  busy=true;$('go').disabled=true;var all=[],rawAll='',used='';
+  busy=true;$('go').disabled=true;var all=[],rawAll='',used='',aiNote='';
   try{
     var ac=aiCfg();
     if(ac.key){
@@ -274,23 +274,25 @@ $('go').onclick=async function(){
       }catch(e){
         all=[];rawAll='';
         var em=(e&&e.message)||String(e);
-        st('AI lỗi ('+(em==='Failed to fetch'?'không kết nối được máy chủ AI, mạng có thể chặn':em)+'). Chuyển sang OCR trên máy…',true);
-        await new Promise(function(r){setTimeout(r,1500)});
+        aiNote='AI lỗi ('+(em==='Failed to fetch'?'không kết nối được máy chủ AI, mạng có thể chặn':em)+')';
+        rawAll='['+aiNote+']\n';
+        st(aiNote+'. Chuyển sang OCR trên máy…',true);
+        await new Promise(function(r){setTimeout(r,4000)});
       }
     }
     if(!used){
-      st('Đang tải bộ đọc chữ (lần đầu mất khoảng 10–30 giây)…');var o=await getOcr();
+      st((aiNote?aiNote+'. ':'')+'Đang tải bộ đọc chữ (lần đầu mất khoảng 10–30 giây)…',!!aiNote);var o=await getOcr();
       for(var i=0;i<files.length;i++){
-        st('Đang đọc ảnh '+(i+1)+'/'+files.length+'…');
+        st((aiNote?aiNote+'. ':'')+'Đang đọc ảnh '+(i+1)+'/'+files.length+'…',!!aiNote);
         var r=await o.detect(await prep(files[i]));
         rawAll+='--- ảnh '+(i+1)+'\n'+(r.texts||[]).map(function(t){var b=(t.box&&t.box[0])||[0,0];return Math.round(b[1])+','+Math.round(b[0])+' | '+t.text}).join('\n')+'\n';
         assemble(r.texts||[]).forEach(function(l){if(all.indexOf(l)<0)all.push(l)});
       }
     }
-    eng=used==='ai'?'đọc bằng AI':'OCR trên máy';$('raw').value='v16\n'+rawAll;$('ta').value=all.join('\n');$('res').classList.remove('hide');upd();
+    eng=used==='ai'?'đọc bằng AI':'OCR trên máy';$('raw').value='v17\n'+rawAll;$('ta').value=all.join('\n');$('res').classList.remove('hide');upd();
     var saved=all.length&&cfg().auto!==false&&ok();
     if(saved)await save(true);
-    if(!saved)st(all.length?'Xong ('+(used==='ai'?'đọc bằng AI':'OCR trên máy')+').':'Không tìm thấy số chứng từ. Hãy chụp gần hơn, thẳng và đủ sáng.',!all.length);
+    if(!saved)st(all.length?'Xong ('+(used==='ai'?'đọc bằng AI':'OCR trên máy')+').'+(aiNote?' '+aiNote:''):'Không tìm thấy số chứng từ. Hãy chụp gần hơn, thẳng và đủ sáng.',!all.length);
   }catch(e){st('Lỗi: '+(e&&e.message||e),true)}
   busy=false;$('go').disabled=!files.length;
 };
