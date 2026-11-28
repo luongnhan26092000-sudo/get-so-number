@@ -35,6 +35,15 @@ h2{font-size:17px;margin:24px 0 6px}
 .it{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px 12px;margin:10px 0}
 .it pre{margin:6px 0;white-space:pre-wrap;word-break:break-all;font:13px/1.6 ui-monospace,Consolas,monospace;max-height:220px;overflow:auto}
 .it .row{margin:6px 0 0}.it button{min-height:42px}
+#camov{position:fixed;inset:0;z-index:99;background:#000;display:flex;flex-direction:column}
+#camov.hide{display:none}
+#camv{flex:1;min-height:0;width:100%;object-fit:contain;background:#000}
+#camtip{color:#fff;text-align:center;font-size:14px;padding:8px 10px 0;background:#000}
+#cambar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px calc(12px + env(safe-area-inset-bottom));background:#000}
+#cambar button{min-height:54px;color:#fff;background:#2a2a2a;border:1px solid #555;min-width:96px}
+#camdone{background:#4fc3a1!important;color:#08251c!important;font-weight:600;border-color:#4fc3a1!important}
+#camshot{width:72px;height:72px;min-height:72px!important;border-radius:50%!important;background:#fff!important;border:5px solid #888!important;padding:0!important;min-width:72px!important}
+#camflash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
 </style>
 </head>
 <body>
@@ -42,7 +51,7 @@ h2{font-size:17px;margin:24px 0 6px}
 <h1>🧾 Trích xuất số chứng từ</h1>
 <button class="p" id="cam">📷 Chụp ảnh</button>
 <div class="row"><button class="s" id="gal">🖼 Chọn từ thư viện</button><button class="s" id="clr">Xóa</button></div>
-<button class="s" id="pst" style="width:100%">📋 Dán ảnh từ clipboard (hoặc nhấn Ctrl+V)</button>
+<button class="s" id="pst" style="width:100%">📋 Dán ảnh từ clipboard (Ctrl+V, dán được nhiều lần)</button>
 <label style="display:block;margin:8px 0;font-size:14px;color:var(--mut)"><input type="checkbox" id="apaste" checked> Tự trích xuất ngay khi dán ảnh</label>
 <input id="f1" type="file" accept="image/*" capture="environment" class="hide">
 <input id="f2" type="file" accept="image/*" multiple class="hide">
@@ -71,19 +80,43 @@ h2{font-size:17px;margin:24px 0 6px}
 <div class="row"><button class="s" id="ghref">Làm mới</button><button class="s" id="ghall">Sao chép tất cả</button></div>
 <div id="ghmsg" style="color:var(--mut);font-size:14px"></div>
 <div id="ghlist"></div>
-<div style="text-align:center;color:var(--mut);font-size:12px;margin-top:28px">Phiên bản 17</div>
+<div style="text-align:center;color:var(--mut);font-size:12px;margin-top:28px">Phiên bản 19</div>
 </main>
+<div id="camov" class="hide"><div id="camflash"></div><video id="camv" autoplay playsinline muted></video><div id="camtip">Chụp lần lượt từ trang đầu đến trang cuối. Chụp xong bấm “Xong”.</div><div id="cambar"><button id="camx">Đóng</button><button id="camshot" aria-label="Chụp"></button><button id="camdone">Xong (0)</button></div></div>
 <script src="ocr.js"></script>
 <script>
 (function(){
-var $=function(i){return document.getElementById(i)},files=[],ocr=null,busy=false,eng='';
+var $=function(i){return document.getElementById(i)},files=[],fresh=false,ocr=null,busy=false,eng='';
 function st(t,e){$('st').textContent=t;$('st').className=e?'err':''}
-function refresh(){var t=$('th');t.textContent='';files.forEach(function(f){var i=document.createElement('img');i.src=URL.createObjectURL(f);t.appendChild(i)});$('go').disabled=!files.length}
-function add(l){Array.prototype.forEach.call(l,function(f){if(/^image\//.test(f.type))files.push(f)});refresh();st(files.length+' ảnh sẵn sàng.')}
-$('cam').onclick=function(){$('f1').click()};$('gal').onclick=function(){$('f2').click()};
+function refresh(){var t=$('th');t.textContent='';files.forEach(function(f,n){var i=document.createElement('img');i.src=URL.createObjectURL(f);i.title='Chạm để xóa ảnh này';i.onclick=function(){if(busy)return;if(confirm('Xóa ảnh '+(n+1)+'?')){files.splice(n,1);refresh();st(files.length+' ảnh sẵn sàng.')}};t.appendChild(i)});$('go').disabled=!files.length}
+function add(l){if(fresh){files=[];fresh=false;$('res').classList.add('hide')}Array.prototype.forEach.call(l,function(f){if(/^image\//.test(f.type))files.push(f)});refresh();st(files.length+' ảnh sẵn sàng.')}
+var camStream=null,camN=0;
+function camClose(){if(camStream){camStream.getTracks().forEach(function(t){t.stop()});camStream=null}$('camv').srcObject=null;$('camov').classList.add('hide')}
+function camOpen(){
+  if(busy){st('Đang xử lý, hãy đợi xong rồi chụp tiếp.',true);return}
+  if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)){$('f1').click();return}
+  navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:4096},height:{ideal:2160}},audio:false}).then(function(m){
+    camStream=m;camN=0;$('camdone').textContent='Xong (0)';var v=$('camv');v.srcObject=m;var pl=v.play();if(pl&&pl.catch)pl.catch(function(){});
+    $('camov').classList.remove('hide');
+  }).catch(function(){$('f1').click()});
+}
+$('camshot').onclick=function(){
+  var v=$('camv');if(!v.videoWidth)return;
+  var c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);
+  c.toBlob(function(b){
+    if(!b)return;
+    add([new File([b],'cam'+Date.now()+'.jpg',{type:'image/jpeg'})]);
+    camN++;$('camdone').textContent='Xong ('+camN+')';
+    var f=$('camflash');f.style.opacity='.8';setTimeout(function(){f.style.opacity='0'},120);
+    if(navigator.vibrate)try{navigator.vibrate(30)}catch(e){}
+  },'image/jpeg',0.92);
+};
+$('camx').onclick=function(){camClose();if(camN&&files.length)st(files.length+' ảnh sẵn sàng.')};
+$('camdone').onclick=function(){camClose();if(files.length)$('go').scrollIntoView({block:'center'})};
+$('cam').onclick=camOpen;$('gal').onclick=function(){$('f2').click()};
 $('f1').onchange=function(){add(this.files);this.value='';if(files.length)$('go').scrollIntoView({block:'center'})};
 $('f2').onchange=function(){add(this.files);this.value=''};
-$('clr').onclick=function(){files=[];refresh();$('res').classList.add('hide');$('ta').value='';$('warn').textContent='';st('')};
+$('clr').onclick=function(){files=[];fresh=false;refresh();$('res').classList.add('hide');$('ta').value='';$('warn').textContent='';st('')};
 
 function prep(f){return new Promise(function(res,rej){
   var im=new Image();im.onload=function(){
@@ -289,11 +322,12 @@ $('go').onclick=async function(){
         assemble(r.texts||[]).forEach(function(l){if(all.indexOf(l)<0)all.push(l)});
       }
     }
-    eng=used==='ai'?'đọc bằng AI':'OCR trên máy';$('raw').value='v17\n'+rawAll;$('ta').value=all.join('\n');$('res').classList.remove('hide');upd();
+    eng=used==='ai'?'đọc bằng AI':'OCR trên máy';$('raw').value='v19\n'+rawAll;$('ta').value=all.join('\n');$('res').classList.remove('hide');upd();
     var saved=all.length&&cfg().auto!==false&&ok();
     if(saved)await save(true);
     if(!saved)st(all.length?'Xong ('+(used==='ai'?'đọc bằng AI':'OCR trên máy')+').'+(aiNote?' '+aiNote:''):'Không tìm thấy số chứng từ. Hãy chụp gần hơn, thẳng và đủ sáng.',!all.length);
   }catch(e){st('Lỗi: '+(e&&e.message||e),true)}
+  if(all.length)fresh=true;
   busy=false;$('go').disabled=!files.length;
 };
 function lines(){return $('ta').value.split('\n').map(function(s){return s.trim()}).filter(Boolean)}
@@ -379,8 +413,9 @@ ap.onchange=function(){try{localStorage.setItem('sct-ap',ap.checked?'1':'0')}cat
 function pasted(l){
   if(!l.length)return;
   if(busy){st('Đang xử lý, hãy đợi xong rồi dán lại.',true);return}
-  files=l;refresh();$('res').classList.add('hide');$('warn').textContent='';
-  st('Đã dán '+l.length+' ảnh.');
+  if(fresh){files=[];fresh=false}
+  files=files.concat(l);refresh();$('res').classList.add('hide');$('warn').textContent='';
+  st('Đã dán thêm '+l.length+' ảnh (tổng '+files.length+' ảnh'+(ap.checked?'':'. Dán tiếp hoặc bấm Trích xuất')+').');
   if(ap.checked)$('go').click();
 }
 document.addEventListener('paste',function(e){
