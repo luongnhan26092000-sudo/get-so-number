@@ -80,13 +80,13 @@ h2{font-size:17px;margin:24px 0 6px}
 <div class="row"><button class="s" id="ghref">Làm mới</button><button class="s" id="ghall">Sao chép tất cả</button></div>
 <div id="ghmsg" style="color:var(--mut);font-size:14px"></div>
 <div id="ghlist"></div>
-<div style="text-align:center;color:var(--mut);font-size:12px;margin-top:28px">Phiên bản 19</div>
+<div style="text-align:center;color:var(--mut);font-size:12px;margin-top:28px">Phiên bản 20</div>
 </main>
 <div id="camov" class="hide"><div id="camflash"></div><video id="camv" autoplay playsinline muted></video><div id="camtip">Chụp lần lượt từ trang đầu đến trang cuối. Chụp xong bấm “Xong”.</div><div id="cambar"><button id="camx">Đóng</button><button id="camshot" aria-label="Chụp"></button><button id="camdone">Xong (0)</button></div></div>
 <script src="ocr.js"></script>
 <script>
 (function(){
-var $=function(i){return document.getElementById(i)},files=[],fresh=false,ocr=null,busy=false,eng='';
+var $=function(i){return document.getElementById(i)},files=[],fresh=false,aiWarn='',ocr=null,busy=false,eng='';
 function st(t,e){$('st').textContent=t;$('st').className=e?'err':''}
 function refresh(){var t=$('th');t.textContent='';files.forEach(function(f,n){var i=document.createElement('img');i.src=URL.createObjectURL(f);i.title='Chạm để xóa ảnh này';i.onclick=function(){if(busy)return;if(confirm('Xóa ảnh '+(n+1)+'?')){files.splice(n,1);refresh();st(files.length+' ảnh sẵn sàng.')}};t.appendChild(i)});$('go').disabled=!files.length}
 function add(l){if(fresh){files=[];fresh=false;$('res').classList.add('hide')}Array.prototype.forEach.call(l,function(f){if(/^image\//.test(f.type))files.push(f)});refresh();st(files.length+' ảnh sẵn sàng.')}
@@ -235,7 +235,7 @@ function aiCfg(){try{return JSON.parse(localStorage.getItem('sct-ai')||'{}')}cat
 function b64(b){return new Promise(function(res,rej){var r=new FileReader();r.onload=function(){res(String(r.result).split(',')[1])};r.onerror=function(){rej(new Error('Không đọc được ảnh'))};r.readAsDataURL(b)})}
 function prepJpg(f){return new Promise(function(res,rej){
   var im=new Image();im.onload=function(){
-    var s=Math.min(1,2000/Math.max(im.width,im.height)),c=document.createElement('canvas');
+    var s=Math.min(1,3000/Math.max(im.width,im.height)),c=document.createElement('canvas');
     c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);
     var x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);
     c.toBlob(function(b){b?res(b):rej(new Error('Không xử lý được ảnh'))},'image/jpeg',0.92);
@@ -251,7 +251,7 @@ async function gemRead(c){
     parts.push({inline_data:{mime_type:'image/jpeg',data:await b64(await prepJpg(files[i]))}});
   }
   parts.push({text:AIP});
-  var body=JSON.stringify({contents:[{role:'user',parts:parts}],generationConfig:{temperature:0,maxOutputTokens:8192}});
+  var body=JSON.stringify({contents:[{role:'user',parts:parts}],generationConfig:{maxOutputTokens:32768}});
   var models=c.model?[c.model]:['gemini-3.8-flash','gemini-3.5-flash-lite'],lastErr=null;
   for(var mi=0;mi<models.length;mi++){
     for(var t=0;t<3;t++){
@@ -262,6 +262,7 @@ async function gemRead(c){
         if(!r.ok){var tx='';try{tx=(await r.json()).error.message}catch(e){}var er=new Error(r.status+(tx?' '+tx:''));er.code=r.status;throw er}
         var j=await r.json();
         var cand=(j.candidates||[])[0]||{};
+        if(cand.finishReason&&cand.finishReason!=='STOP')aiWarn='AI dừng giữa chừng ('+cand.finishReason+'), kết quả có thể thiếu dòng.';
         return ((cand.content||{}).parts||[]).map(function(x){return x.text||''}).join('\n');
       }catch(e){
         lastErr=e;
@@ -280,9 +281,10 @@ async function claudeRead(c){
   content.push({type:'text',text:AIP});
   var r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
     headers:{'content-type':'application/json','x-api-key':c.key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:c.model||'claude-sonnet-5-5',max_tokens:8192,messages:[{role:'user',content:content}]})});
+    body:JSON.stringify({model:c.model||'claude-sonnet-5-5',max_tokens:16000,messages:[{role:'user',content:content}]})});
   if(!r.ok){var t='';try{t=(await r.json()).error.message}catch(e){}throw new Error(r.status+(t?' '+t:''))}
   var j=await r.json();
+  if(j.stop_reason==='max_tokens')aiWarn='AI dừng giữa chừng (hết giới hạn đầu ra), kết quả có thể thiếu dòng.';
   return (j.content||[]).map(function(x){return x.text||''}).join('\n');
 }
 function parseAi(t){
@@ -294,7 +296,7 @@ function parseAi(t){
   return out;
 }
 $('go').onclick=async function(){
-  busy=true;$('go').disabled=true;var all=[],rawAll='',used='',aiNote='';
+  busy=true;$('go').disabled=true;var all=[],rawAll='',used='',aiNote='';aiWarn='';
   try{
     var ac=aiCfg();
     if(ac.key){
@@ -322,7 +324,7 @@ $('go').onclick=async function(){
         assemble(r.texts||[]).forEach(function(l){if(all.indexOf(l)<0)all.push(l)});
       }
     }
-    eng=used==='ai'?'đọc bằng AI':'OCR trên máy';$('raw').value='v19\n'+rawAll;$('ta').value=all.join('\n');$('res').classList.remove('hide');upd();
+    eng=used==='ai'?'đọc bằng AI':'OCR trên máy';$('raw').value='v20\n'+rawAll;$('ta').value=all.join('\n');$('res').classList.remove('hide');upd();
     var saved=all.length&&cfg().auto!==false&&ok();
     if(saved)await save(true);
     if(!saved)st(all.length?'Xong ('+(used==='ai'?'đọc bằng AI':'OCR trên máy')+').'+(aiNote?' '+aiNote:''):'Không tìm thấy số chứng từ. Hãy chụp gần hơn, thẳng và đủ sáng.',!all.length);
@@ -339,7 +341,7 @@ function upd(){
     if(!ok)bad.push(i+1);
   });
   $('sum').textContent=L.length+' dòng · '+n+' số chứng từ'+(eng?' · '+eng:'');
-  $('warn').textContent=bad.length?'⚠ Cần kiểm tra lại dòng: '+bad.join(', ')+' (số lạ hoặc không tăng dần).':'';
+  $('warn').textContent=(aiWarn?'⚠ '+aiWarn+' ':'')+(bad.length?'⚠ Cần kiểm tra lại dòng: '+bad.join(', ')+' (số lạ hoặc không tăng dần).':'');
 }
 $('ta').oninput=upd;
 $('cp').onclick=function(){var t=lines().join('\n'),ta=$('ta');
