@@ -61,9 +61,9 @@ h2{font-size:17px;margin:24px 0 6px}
   <p style="color:var(--mut);font-size:13px;margin:6px 0">Nhập kho dữ liệu riêng tư (dạng <b>tên-bạn/so-data</b>) và token GitHub. Làm một lần trên mỗi thiết bị.</p>
   <input type="text" id="ghrepo" placeholder="tên-bạn/so-data" autocapitalize="off" autocomplete="off">
   <input type="password" id="ghtok" placeholder="Token GitHub (github_pat_…)" autocomplete="off">
-  <p style="color:var(--mut);font-size:13px;margin:10px 0 4px">🤖 Đọc bằng AI Claude (chính xác hơn OCR). Dán API key của bạn; khóa chỉ lưu trong trình duyệt này. Để trống thì dùng OCR trên máy.</p>
-  <input type="password" id="aikey" placeholder="Claude API key (sk-ant-…)" autocomplete="off">
-  <input type="text" id="aimodel" placeholder="Model (mặc định claude-sonnet-5-5)" autocapitalize="off" autocomplete="off">
+  <p style="color:var(--mut);font-size:13px;margin:10px 0 4px">🤖 Đọc bằng AI (chính xác hơn OCR). Dán API key Claude (sk-ant-…) hoặc Gemini (miễn phí, lấy ở aistudio.google.com); khóa chỉ lưu trong trình duyệt này. Để trống thì dùng OCR trên máy.</p>
+  <input type="password" id="aikey" placeholder="API key Claude (sk-ant-…) hoặc Gemini (AQ.… / AIza…)" autocomplete="off">
+  <input type="text" id="aimodel" placeholder="Model (mặc định: Claude = claude-sonnet-5-5, Gemini = gemini-2.5-flash)" autocapitalize="off" autocomplete="off">
   <label style="display:block;margin:6px 0"><input type="checkbox" id="ghauto" checked> Tự lưu sau khi trích xuất</label>
   <button class="s" id="ghsave" style="width:100%">Lưu cài đặt</button>
 </details>
@@ -71,7 +71,7 @@ h2{font-size:17px;margin:24px 0 6px}
 <div class="row"><button class="s" id="ghref">Làm mới</button><button class="s" id="ghall">Sao chép tất cả</button></div>
 <div id="ghmsg" style="color:var(--mut);font-size:14px"></div>
 <div id="ghlist"></div>
-<div style="text-align:center;color:var(--mut);font-size:12px;margin-top:28px">Phiên bản 13</div>
+<div style="text-align:center;color:var(--mut);font-size:12px;margin-top:28px">Phiên bản 14</div>
 </main>
 <script src="ocr.js"></script>
 <script>
@@ -207,7 +207,27 @@ function prepJpg(f){return new Promise(function(res,rej){
     var x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(im,0,0,c.width,c.height);
     c.toBlob(function(b){b?res(b):rej(new Error('Không xử lý được ảnh'))},'image/jpeg',0.92);
   };im.onerror=function(){rej(new Error('Không mở được ảnh'))};im.src=URL.createObjectURL(f)})}
+function isGem(k){return !/^sk-ant-/i.test(k||'')}
 async function aiRead(c){
+  if(isGem(c.key))return gemRead(c);
+  return claudeRead(c);
+}
+async function gemRead(c){
+  var parts=[];
+  for(var i=0;i<files.length;i++){
+    parts.push({inline_data:{mime_type:'image/jpeg',data:await b64(await prepJpg(files[i]))}});
+  }
+  parts.push({text:AIP});
+  var m=c.model||'gemini-2.5-flash';
+  var r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(m)+':generateContent',{method:'POST',
+    headers:{'content-type':'application/json','x-goog-api-key':c.key},
+    body:JSON.stringify({contents:[{role:'user',parts:parts}],generationConfig:{temperature:0,maxOutputTokens:8192}})});
+  if(!r.ok){var t='';try{t=(await r.json()).error.message}catch(e){}throw new Error(r.status+(t?' '+t:''))}
+  var j=await r.json();
+  var cand=(j.candidates||[])[0]||{};
+  return ((cand.content||{}).parts||[]).map(function(x){return x.text||''}).join('\n');
+}
+async function claudeRead(c){
   var content=[];
   for(var i=0;i<files.length;i++){
     content.push({type:'image',source:{type:'base64',media_type:'image/jpeg',data:await b64(await prepJpg(files[i]))}});
@@ -242,7 +262,7 @@ $('go').onclick=async function(){
       }catch(e){
         all=[];rawAll='';
         var em=(e&&e.message)||String(e);
-        st('AI lỗi ('+(em==='Failed to fetch'?'không kết nối được api.anthropic.com, mạng có thể chặn':em)+'). Chuyển sang OCR trên máy…',true);
+        st('AI lỗi ('+(em==='Failed to fetch'?'không kết nối được máy chủ AI, mạng có thể chặn':em)+'). Chuyển sang OCR trên máy…',true);
         await new Promise(function(r){setTimeout(r,1500)});
       }
     }
@@ -255,7 +275,7 @@ $('go').onclick=async function(){
         assemble(r.texts||[]).forEach(function(l){if(all.indexOf(l)<0)all.push(l)});
       }
     }
-    eng=used==='ai'?'đọc bằng AI':'OCR trên máy';$('raw').value='v13\n'+rawAll;$('ta').value=all.join('\n');$('res').classList.remove('hide');upd();
+    eng=used==='ai'?'đọc bằng AI':'OCR trên máy';$('raw').value='v14\n'+rawAll;$('ta').value=all.join('\n');$('res').classList.remove('hide');upd();
     var saved=all.length&&cfg().auto!==false&&ok();
     if(saved)await save(true);
     if(!saved)st(all.length?'Xong ('+(used==='ai'?'đọc bằng AI':'OCR trên máy')+').':'Không tìm thấy số chứng từ. Hãy chụp gần hơn, thẳng và đủ sáng.',!all.length);
